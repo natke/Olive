@@ -176,7 +176,10 @@ def optimize(model_id: str, optimized_model_dir: Path):
             olive_config["input_model"]["config"]["model_path"] = base_model_id
 
         olive_run(olive_config)
-        staging_dirs[submodel_name] = olive_config["engine"]["output_dir"]
+
+        staging_dirs[submodel_name] = Path(olive_config["engine"]["output_dir"])
+
+        shutil.move(staging_dirs[submodel_name] / "cpu-cpu_model.onnx", staging_dirs[submodel_name] / "model.onnx")
 
     # Save the models in a directory structure that the diffusers library can load and run.
     # This is optional, and the optimized models can be used directly in a custom pipeline if desired.
@@ -195,6 +198,7 @@ def optimize(model_id: str, optimized_model_dir: Path):
 
     print("Saving models...")
     onnx_pipeline.save_pretrained(optimized_model_dir)
+    shutil.rmtree(script_dir / "staging", ignore_errors=True)
 
 
 if __name__ == "__main__":
