@@ -133,11 +133,7 @@ def run_inference(optimized_model_dir, prompt, num_images, batch_size, num_infer
         run_inference_loop(pipeline, prompt, num_images, batch_size, num_inference_steps)
 
 
-def optimize(
-    model_id: str,
-    unoptimized_model_dir: Path,
-    optimized_model_dir: Path,
-):
+def optimize(model_id: str, optimized_model_dir: Path):
     from google.protobuf import __version__ as protobuf_version
 
     # protobuf 4.x aborts with OOM when optimizing unet
@@ -149,8 +145,7 @@ def optimize(
     script_dir = Path(__file__).resolve().parent
 
     # Clean up previously optimized models, if any.
-    shutil.rmtree(script_dir / "footprints", ignore_errors=True)
-    shutil.rmtree(unoptimized_model_dir, ignore_errors=True)
+    shutil.rmtree(script_dir / "staging", ignore_errors=True)
     shutil.rmtree(optimized_model_dir, ignore_errors=True)
 
     # The model_id and base_model_id are identical when optimizing a standard stable diffusion model like
@@ -163,7 +158,7 @@ def optimize(
     print("Download stable diffusion PyTorch pipeline...")
     pipeline = StableDiffusionPipeline.from_pretrained(base_model_id, torch_dtype=torch.float32)
 
-    model_info = dict()
+    staging_dirs = dict()
 
     for submodel_name in ("text_encoder", "vae_encoder", "vae_decoder", "safety_checker", "unet"):
         print(f"\nOptimizing {submodel_name}")
@@ -181,48 +176,25 @@ def optimize(
             olive_config["input_model"]["config"]["model_path"] = base_model_id
 
         olive_run(olive_config)
+        staging_dirs[submodel_name] = olive_config["engine"]["output_dir"]
 
-        footprints_file_path = Path(__file__).resolve().parent / "footprints" / f"{submodel_name}_cpu-cpu_model.json"
-        with footprints_file_path.open("r") as footprint_file:
-            footprints = json.load(footprint_file)
-
-            model_info[submodel_name] = {
-                "unoptimized": {
-                    "path": Path(footprints["config"]["model_path"]),
-                },
-                "optimized": {
-                    "path": Path(footprints["config"]["model_path"]),
-                },
-            }
-
-            print(f"Unoptimized Model : {model_info[submodel_name]['unoptimized']['path']}")
-            print(f"Optimized Model   : {model_info[submodel_name]['optimized']['path']}")
-
-    # Save the unoptimized models in a directory structure that the diffusers library can load and run.
+    # Save the models in a directory structure that the diffusers library can load and run.
     # This is optional, and the optimized models can be used directly in a custom pipeline if desired.
     print("\nCreating ONNX pipeline...")
     onnx_pipeline = OnnxStableDiffusionPipeline(
-        vae_encoder=OnnxRuntimeModel.from_pretrained(model_info["vae_encoder"]["unoptimized"]["path"].parent),
-        vae_decoder=OnnxRuntimeModel.from_pretrained(model_info["vae_decoder"]["unoptimized"]["path"].parent),
-        text_encoder=OnnxRuntimeModel.from_pretrained(model_info["text_encoder"]["unoptimized"]["path"].parent),
+        vae_encoder=OnnxRuntimeModel.from_pretrained(staging_dirs["vae_encoder"]),
+        vae_decoder=OnnxRuntimeModel.from_pretrained(staging_dirs["vae_decoder"]),
+        text_encoder=OnnxRuntimeModel.from_pretrained(staging_dirs["text_encoder"]),
         tokenizer=pipeline.tokenizer,
-        unet=OnnxRuntimeModel.from_pretrained(model_info["unet"]["unoptimized"]["path"].parent),
+        unet=OnnxRuntimeModel.from_pretrained(staging_dirs["unet"]),
         scheduler=pipeline.scheduler,
-        safety_checker=OnnxRuntimeModel.from_pretrained(model_info["safety_checker"]["unoptimized"]["path"].parent),
+        safety_checker=OnnxRuntimeModel.from_pretrained(staging_dirs["safety_checker"]),
         feature_extractor=pipeline.feature_extractor,
         requires_safety_checker=True,
     )
 
-    print("Saving unoptimized models...")
-    onnx_pipeline.save_pretrained(unoptimized_model_dir)
-
-    # Create a copy of the unoptimized model directory, then overwrite with optimized models from the olive cache.
-    print("Copying optimized models...")
-    shutil.copytree(unoptimized_model_dir, optimized_model_dir, ignore=shutil.ignore_patterns("weights.pb"))
-    for submodel_name in ("text_encoder", "vae_encoder", "vae_decoder", "safety_checker", "unet"):
-        src_path = model_info[submodel_name]["optimized"]["path"]
-        dst_path = optimized_model_dir / submodel_name / "model.onnx"
-        shutil.copyfile(src_path, dst_path)
+    print("Saving models...")
+    onnx_pipeline.save_pretrained(optimized_model_dir)
 
 
 if __name__ == "__main__":
@@ -231,7 +203,6 @@ if __name__ == "__main__":
     parser.add_argument("--interactive", action="store_true", help="Run with a GUI")
     parser.add_argument("--optimize", action="store_true", help="Runs the optimization step")
     parser.add_argument("--clean_cache", action="store_true", help="Deletes the Olive cache")
-    parser.add_argument("--test_unoptimized", action="store_true", help="Use unoptimized model for inference")
     parser.add_argument(
         "--prompt",
         default="castle surrounded by water and nature, village, volumetric lighting, photorealistic, "
@@ -260,7 +231,6 @@ if __name__ == "__main__":
         exit(1)
 
     script_dir = Path(__file__).resolve().parent
-    unoptimized_model_dir = script_dir / "models" / "unoptimized" / args.model_id
     optimized_model_dir = script_dir / "models" / "optimized" / args.model_id
 
     if args.clean_cache:
@@ -270,16 +240,15 @@ if __name__ == "__main__":
         # TODO: clean up warning filter (mostly during conversion from torch to ONNX)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            optimize(args.model_id, unoptimized_model_dir, optimized_model_dir)
+            optimize(args.model_id, optimized_model_dir)
 
     if not args.optimize:
-        model_dir = unoptimized_model_dir if args.test_unoptimized else optimized_model_dir
         use_static_dims = not args.dynamic_dims
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             run_inference(
-                model_dir,
+                optimized_model_dir,
                 args.prompt,
                 args.num_images,
                 args.batch_size,

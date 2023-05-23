@@ -66,7 +66,6 @@
         "host": "local_system",
         "target": "local_system",
         "cache_dir": "cache",
-        "output_name": "vae_encoder",
-        "output_dir": "footprints"
+        "output_dir": "staging/vae_encoder"
     }
 }
