@@ -165,7 +165,7 @@ def optimize(
 
     model_info = dict()
 
-    for submodel_name in ("text_encoder", "vae_encoder", "vae_decoder", "safety_checker", "unet"):
+    for submodel_name in ("text_encoder", "vae_encoder", "vae_decoder", "unet"):
         print(f"\nOptimizing {submodel_name}")
 
         olive_config = None
@@ -223,7 +223,7 @@ def optimize(
         tokenizer=pipeline.tokenizer,
         unet=OnnxRuntimeModel.from_pretrained(model_info["unet"]["unoptimized"]["path"].parent),
         scheduler=pipeline.scheduler,
-        safety_checker=OnnxRuntimeModel.from_pretrained(model_info["safety_checker"]["unoptimized"]["path"].parent),
+        # safety_checker=OnnxRuntimeModel.from_pretrained(model_info["safety_checker"]["unoptimized"]["path"].parent),
         feature_extractor=pipeline.feature_extractor,
         requires_safety_checker=True,
     )
@@ -242,7 +242,7 @@ def optimize(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_id", default="runwayml/stable-diffusion-v1-5", type=str)
+    parser.add_argument("--model_id", default="stabilityai/stable-diffusion-2-1", type=str)
     parser.add_argument("--interactive", action="store_true", help="Run with a GUI")
     parser.add_argument("--optimize", action="store_true", help="Runs the optimization step")
     parser.add_argument("--clean_cache", action="store_true", help="Deletes the Olive cache")
