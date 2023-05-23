@@ -182,31 +182,16 @@ def optimize(
 
         olive_run(olive_config)
 
-        footprints_file_path = (
-            Path(__file__).resolve().parent / "footprints" / f"{submodel_name}_gpu-dml_footprints.json"
-        )
+        footprints_file_path = Path(__file__).resolve().parent / "footprints" / f"{submodel_name}_cpu-cpu_model.json"
         with footprints_file_path.open("r") as footprint_file:
             footprints = json.load(footprint_file)
 
-            conversion_footprint = None
-            optimizer_footprint = None
-            for _, footprint in footprints.items():
-                if footprint["from_pass"] == "OnnxConversion":
-                    conversion_footprint = footprint
-                elif footprint["from_pass"] == "OrtTransformersOptimization":
-                    optimizer_footprint = footprint
-
-            assert conversion_footprint and optimizer_footprint
-
-            unoptimized_config = conversion_footprint["model_config"]["config"]
-            optimized_config = optimizer_footprint["model_config"]["config"]
-
             model_info[submodel_name] = {
                 "unoptimized": {
-                    "path": Path(unoptimized_config["model_path"]),
+                    "path": Path(footprints["config"]["model_path"]),
                 },
                 "optimized": {
-                    "path": Path(optimized_config["model_path"]),
+                    "path": Path(footprints["config"]["model_path"]),
                 },
             }
 
