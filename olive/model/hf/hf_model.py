@@ -11,6 +11,7 @@ from pydantic import validator
 from olive.common.config_utils import ConfigBase
 from olive.model.model_config import IOConfig
 
+
 class HFComponent(ConfigBase):
     name: str
     io_config: Optional[IOConfig] = None

@@ -120,7 +120,7 @@ def load_custom_huggingface_model(
     hf_config: HFConfig, model_script: Optional[Union[str, Path]] = None, script_dir: Optional[Union[str, Path]] = None
 ):
     user_module_loader = UserModuleLoader(model_script, script_dir)
-    
+
     component_dict = {}
     for component in hf_config.components:
         component_dict[component.name] = user_module_loader.load_object(component.component_func)

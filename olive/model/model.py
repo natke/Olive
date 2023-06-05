@@ -549,7 +549,6 @@ class PyTorchModel(OliveModel):
     ):
         return self.load_model().eval()
 
-
     def get_dummy_inputs(self):
         """
         Return a dummy input for the model.
@@ -593,7 +592,7 @@ class PyTorchModel(OliveModel):
 
     def get_model_config(self):
         if self.hf_config is None:
-            raise Exception("HF model_config is not available")
+            raise ValueError("HF model_config is not available")
         return get_hf_model_config(self.hf_config.model_name)
 
     @property
@@ -623,14 +622,13 @@ class PyTorchModel(OliveModel):
         def model_loader(_):
             return model_component
 
-        pt_model = PyTorchModel(
+        return PyTorchModel(
             model_loader=model_loader,
             io_config=hf_component.io_config,
             dummy_inputs_func=hf_component.dummy_inputs_func,
             model_script=self.model_script,
             script_dir=self.script_dir,
         )
-        return pt_model
 
     def to_json(self, check_object: bool = False):
         config = super().to_json(check_object)
