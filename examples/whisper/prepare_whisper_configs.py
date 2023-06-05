@@ -11,7 +11,7 @@ from urllib import request
 from onnxruntime.transformers.models.t5.past_helper import PastKeyValuesHelper
 from onnxruntime.transformers.models.whisper.whisper_encoder_decoder_init import WhisperEncoderDecoderInitInputs
 
-from olive.hf_utils import get_ort_whisper_for_conditional_generation
+from olive.model.hf.hf_utils import get_ort_whisper_for_conditional_generation
 
 SUPPORTED_WORKFLOWS = {
     ("cpu", "fp32"): ["conversion", "transformers_optimization", "insert_beam_search", "prepost"],

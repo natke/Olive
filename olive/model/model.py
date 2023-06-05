@@ -9,7 +9,7 @@ import tempfile
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import onnx
 import torch
@@ -17,21 +17,20 @@ import yaml
 from onnx import AttributeProto, GraphProto
 from pydantic import validator
 
-if TYPE_CHECKING:
-    from azure.ai.ml import MLClient  # noqa: F401
-
-import olive.data.template as data_config_template
 from olive.common.config_utils import ConfigBase, serialize_to_json, validate_config
 from olive.common.ort_inference import get_ort_inference_session
 from olive.common.user_module_loader import UserModuleLoader
 from olive.constants import Framework, ModelFileFormat
 from olive.hardware import AcceleratorLookup, Device
-from olive.hf_utils import (
+from olive.model.hf.hf_model import HFConfig
+from olive.model.hf.hf_utils import (
     get_hf_model_config,
+    get_hf_model_dummy_input,
     huggingface_model_loader,
     load_huggingface_model_from_model_class,
     load_huggingface_model_from_task,
 )
+from olive.model.model_config import IOConfig
 from olive.resource_path import ResourcePath, ResourcePathConfig, ResourceType, create_resource_path
 from olive.snpe import SNPEDevice, SNPEInferenceSession, SNPESessionOptions
 from olive.snpe.tools.dev import get_dlc_metrics
@@ -167,89 +166,6 @@ class ModelConfig(ConfigBase):
 
     def create_model(self):
         return REGISTRY[self.type.lower()](**self.config)
-
-
-class IOConfig(ConfigBase):
-    # TODO remove input names, shapes and types, turn to use olive dataset conifg.
-    input_names: List[str]
-    input_shapes: List[List[int]] = None
-    input_types: List[str] = None
-    output_names: List[str]
-    output_shapes: List[List[int]] = None
-    output_types: List[str] = None
-    dynamic_axes: Dict[str, Dict[int, str]] = None
-    # ONNX exporter might mark dimension like 'Transposepresent_value_self_1_dim_2' in shape inference
-    # even though we want the dimension to be a constant int.
-    # We use a workaround here: first use dim_param like "1" to represent the dimension, and then
-    # convert it to int in the onnx model.
-    string_to_int_dim_params: List[str] = None
-
-    @validator("input_shapes", "input_types")
-    def check_input_shapes(cls, v, values):
-        if not v:
-            return v
-
-        if "input_names" not in values:
-            raise ValueError("Invalid input_names")
-        if len(v) != len(values["input_names"]):
-            raise ValueError("input_names and input_shapes must have the same length")
-        return v
-
-    @validator("output_shapes", "output_types")
-    def check_output_shapes(cls, v, values):
-        if not v:
-            return v
-
-        if "output_names" not in values:
-            raise ValueError("Invalid output_names")
-        if len(v) != len(values["output_names"]):
-            raise ValueError("output_names and output_shapes must have the same length")
-        return v
-
-    @validator("dynamic_axes")
-    def convert_dynamic_axes(cls, v):
-        if not v:
-            return v
-
-        dynamic_axes = v
-        for k, v in dynamic_axes.items():
-            dynamic_axes[k] = {int(kk): vv for kk, vv in v.items()}
-        return dynamic_axes
-
-    @validator("string_to_int_dim_params")
-    def check_string_to_int_dim_params(cls, v):
-        if not v:
-            return v
-
-        for dim_param in v:
-            try:
-                int(dim_param)
-            except ValueError:
-                raise ValueError(f"Invalid string_to_int_dim_params: {dim_param}. Must be castable to int.")
-        return v
-
-
-class HFComponent(ConfigBase):
-    name: str
-    io_config: IOConfig = None
-    dummy_inputs_func: Union[str, Callable] = None
-
-
-class HFConfig(ConfigBase):
-    model_name: str = None
-    task: str = None
-    # TODO: remove model_class and only use task
-    model_class: str = None
-    use_ort_implementation: bool = False
-    components: List[HFComponent] = None
-    dataset: Dict[str, Any] = None
-
-    @validator("model_class", always=True)
-    def task_or_model_class_required(cls, v, values):
-        if values["model_name"]:
-            if not v and not values.get("task", None):
-                raise ValueError("Either task or model_class must be specified")
-            return v
 
 
 class ONNXModelBase(OliveModel):
@@ -564,14 +480,14 @@ class PyTorchModel(OliveModel):
         self.model = None
         super().__init__(framework=Framework.PYTORCH, model_file_format=model_file_format, model_path=model_path)
 
-        # io config for conversion to onnx
-        self.io_config = validate_config(io_config, IOConfig) if io_config else None
-        self.dummy_inputs_func = dummy_inputs_func
-
         self.dummy_inputs = None
 
         # huggingface config
         self.hf_config = validate_config(hf_config, HFConfig) if hf_config else None
+
+        # io config for conversion to onnx
+        self.io_config = validate_config(io_config, IOConfig) if io_config else None
+        self.dummy_inputs_func = dummy_inputs_func
 
     def load_model(self, rank: int = None) -> torch.nn.Module:
         if self.model is not None:
@@ -586,7 +502,7 @@ class PyTorchModel(OliveModel):
                 model = load_huggingface_model_from_task(self.hf_config.task, input_model)
             else:
                 model = load_huggingface_model_from_model_class(
-                    self.hf_config.model_class, input_model, self.hf_config.use_ort_implementation
+                    self.hf_config, input_model, self.model_script, self.script_dir
                 )
         else:
             if self.model_file_format == ModelFileFormat.PYTORCH_ENTIRE_MODEL:
@@ -633,12 +549,21 @@ class PyTorchModel(OliveModel):
     ):
         return self.load_model().eval()
 
+
     def get_dummy_inputs(self):
         """
         Return a dummy input for the model.
         """
         if self.dummy_inputs is not None:
             return self.dummy_inputs
+
+        if (
+            self.hf_config
+            and not self.hf_config.use_ort_implementation
+            and not self.hf_config.use_custom_implementation
+        ):
+            assert self.hf_config.task, "task must be provided for huggingface model"
+            return get_hf_model_dummy_input(self.hf_config.model_name, self.hf_config.task, self.hf_config.feature)
 
         assert self.dummy_inputs_func or (
             self.io_config and self.io_config.input_shapes
@@ -647,30 +572,28 @@ class PyTorchModel(OliveModel):
         if self.dummy_inputs_func is not None:
             user_module_loader = UserModuleLoader(self.model_script, self.script_dir)
             dummy_inputs = user_module_loader.call_object(self.dummy_inputs_func, self)
-        elif self.io_config and self.io_config.input_shapes:
-            dummy_inputs, _ = (
-                data_config_template.dummy_data_config_template(
-                    input_shapes=self.io_config.input_shapes,
-                    input_types=self.io_config.input_types,
-                )
-                .to_data_container()
-                .get_first_batch()
-            )
-        elif self.hf_config and self.hf_config.model_name:
-            dummy_inputs, _ = (
-                data_config_template.huggingface_data_config_template(
-                    self.hf_config.model_name,
-                    self.hf_config.dataset,
-                )
-                .to_data_container()
-                .get_first_batch()
-            )
+        else:
+            str_to_type = {
+                "float32": torch.float32,
+                "float16": torch.float16,
+                "int32": torch.int32,
+                "int64": torch.int64,
+                "int8": torch.int8,
+                "bool": torch.bool,
+            }
+            input_types = self.io_config.input_types or ["float32"] * len(self.io_config.input_shapes)
+            dummy_inputs = []
+            for shape, dtype in zip(self.io_config.input_shapes, input_types):
+                dummy_inputs.append(torch.zeros(shape, dtype=str_to_type[dtype]))
+            dummy_inputs = tuple(dummy_inputs) if len(dummy_inputs) > 1 else dummy_inputs[0]
+
+        self.dummy_inputs = dummy_inputs
 
         return dummy_inputs
 
     def get_model_config(self):
         if self.hf_config is None:
-            raise ValueError("HF model_config is not available")
+            raise Exception("HF model_config is not available")
         return get_hf_model_config(self.hf_config.model_name)
 
     @property
@@ -700,13 +623,14 @@ class PyTorchModel(OliveModel):
         def model_loader(_):
             return model_component
 
-        return PyTorchModel(
+        pt_model = PyTorchModel(
             model_loader=model_loader,
             io_config=hf_component.io_config,
             dummy_inputs_func=hf_component.dummy_inputs_func,
             model_script=self.model_script,
             script_dir=self.script_dir,
         )
+        return pt_model
 
     def to_json(self, check_object: bool = False):
         config = super().to_json(check_object)
@@ -826,9 +750,9 @@ class OpenVINOModel(OliveModel):
         assert Path(model_path).is_dir(), f"OpenVINO model path {model_path} is not a directory"
 
         if len(list(Path(model_path).glob("*.xml"))) == 0 or len(list(Path(model_path).glob("*.bin"))) == 0:
-            raise FileNotFoundError(f"No OpenVINO model found in {model_path}")
+            raise Exception(f"No OpenVINO model found in {model_path}")
         if len(list(Path(model_path).glob("*.xml"))) > 1 or len(list(Path(model_path).glob("*.bin"))) > 1:
-            raise FileExistsError(f"More than 1 OpenVINO models are found in {model_path}")
+            raise Exception(f"More than 1 OpenVINO models are found in {model_path}")
 
         for model_file in Path(model_path).glob("*.xml"):
             ov_model = Path(model_file)
@@ -995,7 +919,7 @@ class CompositeOnnxModel(ONNXModelBase):
 
     def get_model_config(self):
         if self.hf_config is None:
-            raise ValueError("HF model_config is not available")
+            raise Exception("HF model_config is not available")
         return get_hf_model_config(self.hf_config.model_name)
 
     def to_json(self, check_object: bool = False):
