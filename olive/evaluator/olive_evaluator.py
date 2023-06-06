@@ -53,7 +53,7 @@ class OliveEvaluator(ABC):
         # will be used in model.prepare_session(..)
         return (
             metric.user_config.inference_settings.get(self.framework.lower())
-            if metric.user_config.inference_settings
+            if hasattr(metric.user_config, "inference_settings") and metric.user_config.inference_settings
             else None
         )
 
@@ -324,7 +324,7 @@ class OnnxEvaluator(OliveEvaluator, framework=Framework.ONNX):
 
         os.environ["OMPI_COMM_WORLD_RANK"] = str(local_rank)
         os.environ["OMPI_COMM_WORLD_SIZE"] = str(world_size)
-
+        
         from mpi4py import MPI
 
         local_rank = MPI.COMM_WORLD.Get_rank()
@@ -346,16 +346,15 @@ class OnnxEvaluator(OliveEvaluator, framework=Framework.ONNX):
             output = session.run(input_feed=input_dict, output_names=None)
             output = torch.Tensor(output[0]) if len(output_names) == 1 else torch.Tensor(output)
             output = post_func(output) if post_func else output
-            preds.extend(output.tolist())
-            targets.extend(labels.data.tolist())
+            preds.append(output)
+            targets.append(labels)
 
         return preds, targets
-
-    def _evaluate_distributed_accuracy(self, model: DistributedOnnxModel, metric: Metric) -> MetricResult:
+    
+    def _evaluate_distributed_values(self, model: DistributedOnnxModel,  metric: Metric) -> MetricResult:
         from copy import deepcopy
 
         from mpi4py.futures import MPIPoolExecutor
-
         config = {
             "model_path": None,
             "local_rank": None,
@@ -374,9 +373,16 @@ class OnnxEvaluator(OliveEvaluator, framework=Framework.ONNX):
         with MPIPoolExecutor(max_workers=model.ranks) as executor:
             results = executor.map(OnnxEvaluator._evaluate_distributed_accuracy_worker, args)
             executor.shutdown()
+        
+        # sync the execution
+        results = list(results)
 
         preds = [x for p, _ in results for x in p]
         targets = [x for _, t in results for x in t]
+        return preds, targets
+
+    def _evaluate_distributed_accuracy(self, model: DistributedOnnxModel, metric: Metric) -> MetricResult:
+        preds, targets = self._evaluate_distributed_values(model, metric)
         return OliveEvaluator.compute_accuracy(metric, preds, targets)
 
     @staticmethod

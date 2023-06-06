@@ -174,7 +174,7 @@ def save_model(
         logger.warning("Saving composite ONNX models is not supported yet.")
         return
 
-    model_path = model_json["config"]["model_path"]
+    model_path = model_json["config"].get("model_path")
     if model_path:
         # create resource path
         model_resource_path = create_resource_path(model_path)

@@ -931,7 +931,7 @@ class DistributedOnnxModel(ONNXModelBase):
                 "use_ort_extensions": self.use_ort_extensions,
             },
         }
-        return serialize_to_json(config, check_object=check_object)
+        return serialize_to_json(config, check_objects=check_object)
 
 
 class CompositeOnnxModel(ONNXModelBase):

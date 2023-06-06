@@ -39,6 +39,7 @@ _type_to_user_config = {
     },
     "custom": {
         "evaluate_func": ConfigParam(type_=Union[Callable, str], required=True, is_object=True),
+        "dataloader_func": ConfigParam(type_=Union[Callable, str], is_object=True),
     },
 }
 
