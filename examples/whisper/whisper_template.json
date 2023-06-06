@@ -10,13 +10,13 @@
                 "components" : [
                     {
                         "name": "encoder_decoder_init",
-                        "io_config": "<place_holder>",
+                        "io_config": "get_encdec_io_config",
                         "component_func": "get_encoder_decoder_init",
                         "dummy_inputs_func": "encoder_decoder_init_dummy_inputs"
                     },
                     {
                         "name": "decoder",
-                        "io_config": "<place_holder>",
+                        "io_config": "get_dec_io_config",
                         "component_func": "get_decoder",
                         "dummy_inputs_func": "decoder_dummy_inputs"
                     }
@@ -86,7 +86,7 @@
             "config": {
                 "tool_command": "whisper",
                 "tool_command_args": {
-                    "model_name": "<place_holder>",
+                    "model_name": "openai/whisper-tiny.en",
                     "testdata_filepath": "<place_holder>",
                     "use_audio_decoder" : "<place_holder>"
                 }

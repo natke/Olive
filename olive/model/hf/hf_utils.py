@@ -92,12 +92,7 @@ def get_hf_model_config(model_name: str):
     return AutoConfig.from_pretrained(model_name)
 
 
-def load_huggingface_model_from_model_class(
-    hf_config: HFConfig,
-    name: str,
-    model_script: Optional[Union[str, Path]] = None,
-    script_dir: Optional[Union[str, Path]] = None,
-):
+def load_huggingface_model_from_model_class(hf_config: HFConfig, name: str):
     """
     Load huggingface model from model_loader and name
 
@@ -109,14 +104,10 @@ def load_huggingface_model_from_model_class(
         return MODEL_CLASS_TO_ORT_IMPLEMENTATION[hf_config.model_class](
             name, hf_config.model_type, hf_config.state_dict_path
         )
-
-    if hf_config.use_custom_implementation:
-        return load_custom_huggingface_model(hf_config, model_script, script_dir)
-
     return huggingface_model_loader(hf_config.model_class)(name)
 
 
-def load_custom_huggingface_model(
+def load_huggingface_model_from_custom_implementation(
     hf_config: HFConfig, model_script: Optional[Union[str, Path]] = None, script_dir: Optional[Union[str, Path]] = None
 ):
     user_module_loader = UserModuleLoader(model_script, script_dir)

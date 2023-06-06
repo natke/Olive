@@ -35,8 +35,7 @@ def main(raw_args=None):
     # load template
     template_json = json.load(open("whisper_template.json", "r"))
 
-    model_name = template_json["input_model"]["config"]["hf_config"]["model_name"]
-    whisper_config = WhisperConfig(model_name)
+    whisper_config = WhisperConfig(template_json["input_model"]["config"]["hf_config"]["model_name"])
 
     # set dataloader
     template_json["evaluators"]["common_evaluator"]["metrics"][0]["user_config"]["dataloader_func"] = (
@@ -48,9 +47,6 @@ def main(raw_args=None):
         "num_heads"
     ] = whisper_config.encoder_attention_heads
     template_json["passes"]["transformers_optimization"]["config"]["hidden_size"] = whisper_config.d_model
-
-    # set model name in prepost
-    template_json["passes"]["prepost"]["config"]["tool_command_args"]["model_name"] = model_name
 
     # download audio test data
     test_audio_path = download_audio_test_data()

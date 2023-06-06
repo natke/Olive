@@ -27,6 +27,7 @@ from olive.model.hf.hf_utils import (
     get_hf_model_config,
     get_hf_model_dummy_input,
     huggingface_model_loader,
+    load_huggingface_model_from_custom_implementation,
     load_huggingface_model_from_model_class,
     load_huggingface_model_from_task,
 )
@@ -498,12 +499,14 @@ class PyTorchModel(OliveModel):
             model = user_module_loader.call_object(self.model_loader, self.model_path)
         elif self.hf_config and (self.hf_config.model_class or self.hf_config.task):
             input_model = self.model_path or self.hf_config.model_name
-            if self.hf_config.task:
+            if self.hf_config.use_custom_implementation:
+                model = load_huggingface_model_from_custom_implementation(
+                    self.hf_config, self.model_script, self.script_dir
+                )
+            elif self.hf_config.task:
                 model = load_huggingface_model_from_task(self.hf_config.task, input_model)
             else:
-                model = load_huggingface_model_from_model_class(
-                    self.hf_config, input_model, self.model_script, self.script_dir
-                )
+                model = load_huggingface_model_from_model_class(self.hf_config, input_model)
         else:
             if self.model_file_format == ModelFileFormat.PYTORCH_ENTIRE_MODEL:
                 model = torch.load(self.model_path)
@@ -619,12 +622,18 @@ class PyTorchModel(OliveModel):
         components_dict = {component.name: component for component in self.hf_config.components}
         hf_component = components_dict[component_name]
 
+        io_config = hf_component.io_config
+        if isinstance(io_config, str):
+            user_module_loader = UserModuleLoader(self.model_script, self.script_dir)
+            io_config = user_module_loader.call_object(self.dummy_inputs_func, self)
+        io_config = validate_config(io_config, IOConfig)
+
         def model_loader(_):
             return model_component
 
         return PyTorchModel(
             model_loader=model_loader,
-            io_config=hf_component.io_config,
+            io_config=io_config,
             dummy_inputs_func=hf_component.dummy_inputs_func,
             model_script=self.model_script,
             script_dir=self.script_dir,

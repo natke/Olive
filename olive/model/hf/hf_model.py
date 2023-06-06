@@ -14,7 +14,7 @@ from olive.model.model_config import IOConfig
 
 class HFComponent(ConfigBase):
     name: str
-    io_config: Optional[IOConfig] = None
+    io_config: Optional[Union[IOConfig, str, Dict[str, Any]]] = None
     component_func: Optional[Union[str, Callable]] = None
     dummy_inputs_func: Optional[Union[str, Callable]] = None
 
