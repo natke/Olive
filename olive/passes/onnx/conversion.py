@@ -5,7 +5,7 @@
 import logging
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Union
+from typing import Any, Dict, Iterable, List, Tuple, Union
 
 import onnx
 import torch
@@ -19,6 +19,7 @@ from olive.model.model_config import IOConfig
 from olive.passes import Pass
 from olive.passes.onnx.common import get_external_data_config, model_proto_to_olive_model
 from olive.passes.pass_config import PassConfigParam
+import pdb
 
 logger = logging.getLogger(__name__)
 
@@ -99,8 +100,37 @@ class OnnxConversion(Pass):
         tmp_dir = tempfile.TemporaryDirectory(prefix="olive_tmp")
         tmp_dir_path = Path(tmp_dir.name)
         tmp_model_path = str(tmp_dir_path / Path(output_model_path).name)
+        
+        # class WrappedModel(torch.nn.Module):
+        #     def __init__(self, model):
+        #         super().__init__()
+        #         self._model = model
+        
+        #     def forward(self, x, y):
+        #         return self._model.generate(x, y)
+        
+        # model_args = (dummy_inputs['input_features'], dummy_inputs['decoder_input_ids'])
+        
+        # from transformers.onnx import FeaturesManager
+        # from transformers import AutoProcessor
 
+        # processor = AutoProcessor.from_pretrained("openai/whisper-tiny.en")
+        # _, model_onnx_config = FeaturesManager.check_supported_model_or_raise(pytorch_model, feature="default")
+        # from transformers.onnx.convert import export_pytorch
+        # onnx_config = model_onnx_config(pytorch_model.config)
+
+        # matched_inputs, onnx_outputs = export_pytorch(
+        #     processor,
+        #     pytorch_model,
+        #     onnx_config,
+        #     config["target_opset"],
+        #     Path(tmp_model_path),
+        # )
+        # pdb.set_trace()
+        
         torch.onnx.export(
+            # WrappedModel(pytorch_model),
+            # model_args,
             pytorch_model,
             dummy_inputs,
             tmp_model_path,
@@ -113,6 +143,7 @@ class OnnxConversion(Pass):
 
         # load the model
         onnx_model = onnx.load(tmp_model_path)
+        # pdb.set_trace()
         # the model is loaded into memory, so it's safe to delete previously exported file(s)
         tmp_dir.cleanup()
 

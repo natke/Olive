@@ -4,22 +4,26 @@
 # --------------------------------------------------------------------------
 import tempfile
 from pathlib import Path
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Union
 
 import onnx
 from onnxruntime import __version__ as OrtVersion
+from olive.common.user_module_loader import UserModuleLoader
 
 from olive.hardware.accelerator import AcceleratorSpec
 from olive.model import ONNXModel
 from olive.passes import Pass
 from olive.passes.onnx.common import get_external_data_config, model_proto_to_olive_model
 from olive.passes.pass_config import PassConfigParam
+from olive.passes.utils.whisper_prepost import _merge_models
 
 
 class AppendPrePostProcessingOps(Pass):
     """
     Add Pre/Post nodes to the input model
     """
+    
+    _requires_user_script = True
 
     @staticmethod
     def _default_config(accelerator_spec: AcceleratorSpec) -> Dict[str, Dict[str, Any]]:
@@ -45,6 +49,28 @@ class AppendPrePostProcessingOps(Pass):
             "target_opset": PassConfigParam(
                 type_=int, default_value=16, description="The version of the default (ai.onnx) opset to target."
             ),
+            "preprocess_func": PassConfigParam(
+                type_=Union[Callable, str],
+                required=False,
+                is_object=True,
+                description=(
+                    "A callable function or a str of the function name from 'user_script'"
+                    " for the instance of the dataloader."
+                ),
+            ),  
+            "postprocess_func": PassConfigParam(
+                type_=Union[Callable, str],
+                required=False,
+                is_object=True,
+                description=(
+                    "A callable function or a str of the function name from 'user_script'"
+                    " for the instance of the dataloader."
+                ),
+            ), 
+            "testdata_filepath": PassConfigParam(
+                type_=Union[Path, str],
+                required=False,
+            )      
         }
         config.update(get_external_data_config())
         return config
@@ -59,12 +85,21 @@ class AppendPrePostProcessingOps(Pass):
         tmp_model_path = str(tmp_dir_path / Path(output_model_path).name)
 
         tool_command = config.get("tool_command")
+        if config.get("user_script"):
+            loader = UserModuleLoader(user_script=config["user_script"], script_dir=config["script_dir"])
+            pre_model = loader.call_object(config["preprocess_func"], config.get("testdata_filepath"), tmp_model_path)
+            post_model = loader.call_object(config["postprocess_func"])
+            final_model = _merge_models(pre_model, model.load_model(), post_model)
+            onnx.checker.check_model(final_model)
+            onnx.save_model(final_model, tmp_model_path)
+            return final_model
+            
         if tool_command:
             if tool_command == "whisper":
                 from olive.passes.utils.whisper_prepost import add_pre_post_processing_to_model as add_ppp
 
                 kwargs = config.get("tool_command_args") or {}
-                add_ppp(model.load_model(), tmp_model_path, **kwargs)
+                add_ppp(model.load_model(), tmp_model_path, testdata_filepath=config.get("testdata_filepath") ,**kwargs)
             else:
                 # Use the pre-defined helper to add pre/post processing to model.
                 from onnxruntime_extensions.tools import add_pre_post_processing_to_model as add_ppp

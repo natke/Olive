@@ -251,7 +251,15 @@ def _postprocessing(name: str) -> onnx.ModelProto:
 def _merge_models(
     pre_model: onnx.ModelProto, core_model: onnx.ModelProto, post_model: onnx.ModelProto
 ) -> onnx.ModelProto:
+    print(f"premodel inputs: {[input.name for input in pre_model.graph.input]}")
+    print(f"premodel outputs: {[output.name for output in pre_model.graph.output]}")
+    print(f"coremodel inputs: {[input.name for input in core_model.graph.input]}")
+    print(f"coremodel outputs: {[output.name for output in core_model.graph.output]}")
     pre_core_model = onnx.compose.merge_models(pre_model, core_model, io_map=[("log_mel", "input_features")])
+    print(f"precoremodel inputs: {[input.name for input in pre_core_model.graph.input]}")
+    print(f"precoremodel outputs: {[output.name for output in pre_core_model.graph.output]}")
+    print(f"postmodel inputs: {[input.name for input in post_model.graph.input]}")
+    print(f"postmodel outputs: {[output.name for output in post_model.graph.output]}")
     all_models = onnx.compose.merge_models(pre_core_model, post_model, io_map=[("sequences", "ids")])
     bpe_decoder_node = all_models.graph.node.pop(-1)
     bpe_decoder_node.input.pop(0)
@@ -287,4 +295,6 @@ def add_pre_post_processing_to_model(
             convert_attribute=True,
         )
 
+    print(f"final model inputs: {[input.name for input in final_model.graph.input]}")
+    print(f"final model outputs: {[output.name for output in final_model.graph.output]}")
     return final_model

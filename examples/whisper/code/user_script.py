@@ -2,6 +2,11 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License.
 # --------------------------------------------------------------------------
+import io
+import onnx
+import torch
+from examples.whisper.code.process_data import WhisperPrePipeline
+from olive.passes.utils.whisper_prepost import _to_onnx_stft
 from past_helper import PastKeyValuesHelper
 from transformers import WhisperForConditionalGeneration
 from whisper_dataset import WhisperDataset
@@ -175,3 +180,85 @@ def whisper_audio_decoder_dataloader(data_dir, batch_size=None):
 
 def whisper_no_audio_decoder_dataloader(data_dir, batch_size=None):
     return WhisperDataset(data_dir=data_dir, use_audio_decoder=False)
+    
+def preprocess(data_filepath, output_filepath):
+    import librosa
+    import numpy as np
+    
+    audio_blob, _ = librosa.load(data_filepath)
+    audio_blob = np.expand_dims(audio_blob, axis=0)
+    audio_pcm = torch.from_numpy(audio_blob)
+    
+    whisper_processing = WhisperPrePipeline()
+    model_args = (audio_pcm,)
+    
+    with io.BytesIO() as strm:
+        torch.onnx.export(
+            whisper_processing,
+            model_args,
+            strm,
+            input_names=["audio_pcm"],
+            output_names=["log_mel"],
+            do_constant_folding=True,
+            export_params=True,
+            opset_version=17,
+            dynamic_axes={
+                "audio_pcm": {1: "sample_len"},
+            },
+        )
+        model = onnx.load_from_string(strm.getvalue())
+    model = _to_onnx_stft(model)
+    onnx.save_model(model, output_filepath)
+    return model
+
+def postprocess():
+    from transformers import WhisperProcessor
+    from onnxruntime_extensions import PyOrtFunction
+    from onnxruntime_extensions.cvt import HFTokenizerConverter
+
+    processor = WhisperProcessor.from_pretrained("openai/whisper-tiny.en")
+    fn_decoder = PyOrtFunction.from_customop(
+        "BpeDecoder", cvt=HFTokenizerConverter(processor.tokenizer).bpe_decoder, skip_special_tokens=True, cpu_only=True
+    )
+    
+    return fn_decoder.onnx_model
+    
+def eval(model, data_dir, batch_size, device, execution_providers):
+    from transformers import AutoTokenizer, pipeline
+    tokenizer = AutoTokenizer.from_pretrained("openai/whisper-tiny.en")
+    _pipeline = pipeline("automatic-speech-recognition", model=model.load_model(), tokenizer=tokenizer)
+    dataloader = whisper_no_audio_decoder_dataloader(data_dir, batch_size)
+    input_data, _ = next(iter(dataloader))
+    print(f"input_data: {input_data}")
+    result = _pipeline(input_data)
+    print(f"result: {result}")
+    
+def t(model, data_dir, batch_size, device, execution_providers):
+    from transformers import (
+        WhisperForConditionalGeneration,
+        WhisperTokenizerFast,
+        WhisperFeatureExtractor,
+    )
+    from datasets import load_dataset
+    feature_extractor = WhisperFeatureExtractor()
+    audio = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")[3]["audio"]["array"]
+    input_features = feature_extractor(audio, sampling_rate=16000, return_tensors="pt").input_features
+    session = model.prepare_session(
+        inference_settings=None,
+        device=device,
+        execution_providers=execution_providers,
+    )
+    PREV_TOKEN = 50360 # <|startofprev|>
+    prompt_tokens = [PREV_TOKEN, 1770, 13, 2264, 346, 353, 318, 262, 46329, 286, 262, 3504, 6097, 11, 290, 356, 389, 9675, 284, 7062, 465, 21443, 13, 5414, 318, 1770, 13, 2264, 346, 353, 338, 5642, 1342, 3499, 621, 465, 2300, 13, 679, 4952, 514, 326, 379, 428, 43856, 1622, 286, 262, 614, 11, 351, 6786, 290, 32595, 12023, 28236, 878, 514, 11, 985, 2915, 7428, 422, 6600, 290, 663, 2482, 3051, 749, 14704, 284, 262, 2000, 13]
+
+    SOT_TOKEN = 50257 # <|startoftranscript|>
+    NO_TIMESTAMPS_TOKEN = 50362 # <|notimestamps|>
+    decoder_input_ids = torch.LongTensor([prompt_tokens + [SOT_TOKEN, NO_TIMESTAMPS_TOKEN]])
+    print(f"input_features: {input_features}")
+    
+    input_feed={"input_features": input_features, "decoder_input_ids": decoder_input_ids[0].numpy()}
+    res = session.run(input_feed=input_feed, output_names=None)
+    tokenizer = WhisperTokenizerFast.from_pretrained("openai/whisper-tiny.en", language="english")
+    print(tokenizer.decode(res, decode_with_timestamps=False))
+    
+    

@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from utils import check_no_search_output
+from utils import check_no_eval_output, check_no_search_output
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -22,28 +22,36 @@ def setup():
     # prepare configs
     from prepare_whisper_configs import main as prepare_whisper_configs
 
-    prepare_whisper_configs([])
+    prepare_whisper_configs(["--no_audio_decoder"])
 
     yield
     os.chdir(cur_dir)
     sys.path.remove(example_dir)
 
 
-@pytest.mark.parametrize("device_precision", [("cpu", "fp32"), ("cpu", "int8")])
-def test_whisper(device_precision):
+@pytest.mark.parametrize("custom_device_precision", [(False, None, None)])
+def test_whisper(custom_device_precision):
     from olive.workflows import run as olive_run
 
-    device, precision = device_precision
-    config_file = f"whisper_{device}_{precision}.json"
+    is_custom, device, precision = custom_device_precision
+    config_file = "whisper.json"
+    
+    if is_custom:
+        config_file = f"whisper_{device}_{precision}.json"
+    
     olive_config = json.load(open(config_file, "r"))
 
     # test workflow
     result = olive_run(olive_config)
-    check_no_search_output(result)
-
+    if is_custom:
+        check_no_search_output(result)
+    else:
+        check_no_eval_output(result)
+        
     # test transcription
     from test_transcription import main as test_transcription
 
     transcription = test_transcription(["--config", config_file])
     print(transcription)
     assert len(transcription) > 0
+

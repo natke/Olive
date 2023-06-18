@@ -86,9 +86,9 @@
             "type": "AppendPrePostProcessingOps",
             "config": {
                 "tool_command": "whisper",
+                "testdata_filepath": "<place_holder>",
                 "tool_command_args": {
                     "model_name": "openai/whisper-tiny.en",
-                    "testdata_filepath": "<place_holder>",
                     "use_audio_decoder" : "<place_holder>"
                 }
             }
@@ -100,7 +100,7 @@
         "host": "local_system",
         "target": "local_system",
         "evaluator": "common_evaluator",
-        "clean_cache": false,
+        "clean_cache": true,
         "cache_dir": "cache",
         "output_dir": "models",
         "output_name": "<place_holder>",

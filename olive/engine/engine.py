@@ -272,7 +272,7 @@ class Engine:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         outputs = {}
-        pf_footprints = {}
+        hw_pf_footprints_map = {}
         for accelerator_spec in self.accelerator_specs:
             # generate search space and initialize the passes for each hardware accelerator
             self.setup_passes(accelerator_spec)
@@ -302,17 +302,17 @@ class Engine:
                         output_name,
                     )
                     outputs[accelerator_spec] = output
-                    pf_footprints[accelerator_spec] = self.footprints[accelerator_spec].get_last_node()
+                    hw_pf_footprints_map[accelerator_spec] = self.footprints[accelerator_spec].get_last_node()
                 else:
-                    footprint = self.run_search(
+                    pf_footprints = self.run_search(
                         input_model,
                         input_model_id,
                         accelerator_spec,
                         output_dir,
                         output_name,
                     )
-                    outputs[accelerator_spec] = footprint
-                    pf_footprints[accelerator_spec] = footprint
+                    outputs[accelerator_spec] = pf_footprints
+                    hw_pf_footprints_map[accelerator_spec] = pf_footprints
 
             except EXCEPTIONS_TO_RAISE:
                 raise
@@ -320,11 +320,13 @@ class Engine:
                 logger.warning(f"Failed to run Olive on {accelerator_spec}: {e}", exc_info=True)
 
         if packaging_config:
-            logger.info(f"Package top ranked {sum([len(f.nodes) for f in pf_footprints.values()])} models as artifacts")
+            logger.info(
+                f"Package top ranked {sum([len(f.nodes) for f in hw_pf_footprints_map.values()])} models as artifacts"
+            )
             generate_output_artifacts(
                 packaging_config,
                 self.footprints,
-                pf_footprints,
+                hw_pf_footprints_map,
                 output_dir,
             )
         else:
@@ -857,6 +859,7 @@ class Engine:
 
         # prune if invalid search_point
         if not p.validate_search_point(pass_search_point) and not self.no_search:
+            logger.info(f"Invalid search point for pass {pass_name}. Pruning.")
             output_model = PRUNED_CONFIG
         else:
             # run pass

@@ -48,7 +48,7 @@ def main(raw_args=None):
 
     # download audio test data
     test_audio_path = download_audio_test_data()
-    template_json["passes"]["prepost"]["config"]["tool_command_args"]["testdata_filepath"] = str(test_audio_path)
+    template_json["passes"]["prepost"]["config"]["testdata_filepath"] = str(test_audio_path)
 
     for device, precision in SUPPORTED_WORKFLOWS:
         workflow = SUPPORTED_WORKFLOWS[(device, precision)]
