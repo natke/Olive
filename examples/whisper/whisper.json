@@ -25,16 +25,17 @@
             "metrics": [
                 {
                     "name": "latency",
-                    "type": "custom",
+                    "type": "latency",
                     "sub_types": [
                         {
-                            "name": "avg"                        }
+                            "name": "avg"                        
+                        }
                     ],
                     "user_config": {
                         "user_script": "code/user_script.py",
                         "script_dir": "code",
                         "data_dir": "data",
-                        "evaluate_func": "t"
+                        "dataloader_func": "whisper_no_audio_decoder_dataloader"
                     }
                 }
             ]
@@ -42,27 +43,44 @@
     },
     "passes": {
         "conversion": {
-            "type": "OnnxConversion",
+            "type": "EnDeConversion",
             "config": {
                 "target_opset": 17
             }
         },
-        "transformers_optimization": {
-            "type": "OrtTransformersOptimization",
+        "onnx_dynamic_quantization": {
+            "type": "OnnxDynamicQuantization",
+            "disable_search": true,
             "config": {
-                "model_type": "bart",
-                "num_heads": 4,
-                "hidden_size": 256,
-                "optimization_options": {
-                    "use_multi_head_attention": true
-                },
-                "use_gpu": false
+                "per_channel": false,
+                "reduce_range": false,
+                "op_types_to_quantize": [
+                    "MatMul",
+                    "Gemm",
+                    "Gather"
+                ],
+                "MatMulConstBOnly": false
+            }
+        },
+        "insert_beam_search": {
+            "type": "InsertBeamSearch"
+        },
+        "prepost": {
+            "type": "AppendPrePostProcessingOps",
+            "config": {
+                "tool_command": "whisper",
+                "testdata_filepath": "data/1272-141231-0002.mp3",
+                "tool_command_args": {
+                    "model_name": "openai/whisper-tiny.en",
+                    "use_audio_decoder": false
+                }
             }
         }
     },
     "engine": {
         "log_severity_level": 0,
         "search_strategy": false,
+        "evaluator": "common_evaluator",
         "host": "local_system",
         "target": "local_system",
         "clean_cache": true,

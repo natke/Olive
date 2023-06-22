@@ -3,9 +3,11 @@
 # Licensed under the MIT License.
 # --------------------------------------------------------------------------
 import io
+import numpy as np
 import onnx
 import torch
 from examples.whisper.code.process_data import WhisperPrePipeline
+from examples.whisper.test_transcription import N_FRAMES, N_MELS
 from olive.passes.utils.whisper_prepost import _to_onnx_stft
 from past_helper import PastKeyValuesHelper
 from transformers import WhisperForConditionalGeneration
@@ -221,14 +223,24 @@ def postprocess():
     return fn_decoder.onnx_model
     
 def eval(model, data_dir, batch_size, device, execution_providers):
-    from transformers import AutoTokenizer, pipeline
-    tokenizer = AutoTokenizer.from_pretrained("openai/whisper-tiny.en")
-    _pipeline = pipeline("automatic-speech-recognition", model=model.load_model(), tokenizer=tokenizer)
-    dataloader = whisper_no_audio_decoder_dataloader(data_dir, batch_size)
-    input_data, _ = next(iter(dataloader))
-    print(f"input_data: {input_data}")
-    result = _pipeline(input_data)
-    print(f"result: {result}")
+    audio_path = "data/1272-141231-0002.mp3"
+    import librosa
+    from onnxruntime_extensions import PyOrtFunction
+    audio_blob, _ = librosa.load(audio_path)
+    audio_blob = np.expand_dims(audio_blob, axis=0)
+    print(f"audo_blob: {audio_blob}")
+    print(f"audio_blob.shape: {audio_blob.shape}")
+    model = PyOrtFunction.from_model(model.model_path)
+    audio_blob = np.expand_dims(audio_blob, axis=0)
+    print(f"audo_blob: {audio_blob}")
+    print(f"audio_blob.shape: {audio_blob.shape}")
+    arr = np.asarray([0], dtype=np.int32)
+    arr = np.expand_dims(arr, axis=0)
+    output_text = model(
+        audio_blob,
+        arr
+    )
+    return output_text[0]
     
 def t(model, data_dir, batch_size, device, execution_providers):
     from transformers import (

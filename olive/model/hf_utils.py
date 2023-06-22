@@ -2,6 +2,7 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License.
 # --------------------------------------------------------------------------
+from itertools import chain
 from typing import Any, Callable, Dict, List, Union
 
 from pydantic import validator
@@ -114,7 +115,7 @@ def get_hf_model_io_config(model_name: str, task: str, feature: str):
     io_config = {}
     io_config["input_names"] = list(inputs.keys())
     io_config["output_names"] = list(outputs.keys())
-    io_config["dynamic_axes"] = dict(inputs.items())  # dynamic axes for inputs
+    io_config["dynamic_axes"] = dict(chain(inputs.items(), outputs.items()))  # dynamic axes for inputs
     print(f"io_config: {io_config}")
     return io_config
 
@@ -124,4 +125,6 @@ def get_hf_model_dummy_input(model_name: str, task: str, feature: str):
 
     model_config = get_onnx_config(model_name, task, feature)
     processor = AutoProcessor.from_pretrained(model_name)
-    return model_config.generate_dummy_inputs(processor, framework="pt")
+    dummy = model_config.generate_dummy_inputs(processor, framework="pt")
+    print(f"dummy: {dummy}")
+    return dummy

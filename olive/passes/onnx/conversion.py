@@ -94,6 +94,7 @@ class OnnxConversion(Pass):
 
         output_model_path = ONNXModel.resolve_path(output_model_path)
 
+        print(f"dummy_inputs: {dummy_inputs}")
         # there might be multiple files created during export, so we need to track the dir
         # if there are other processes writing to the same dir, we might end up deleting files created by
         # other processes
@@ -143,6 +144,8 @@ class OnnxConversion(Pass):
 
         # load the model
         onnx_model = onnx.load(tmp_model_path)
+        print(f"graph input names: {[input.name for input in onnx_model.graph.input]}")
+        print(f"graph output names: {[output.name for output in onnx_model.graph.output]}")
         # pdb.set_trace()
         # the model is loaded into memory, so it's safe to delete previously exported file(s)
         tmp_dir.cleanup()

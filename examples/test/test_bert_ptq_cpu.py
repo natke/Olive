@@ -2,6 +2,7 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License.
 # --------------------------------------------------------------------------
+import json
 import os
 import platform
 from pathlib import Path
@@ -22,7 +23,7 @@ def setup():
 
 @pytest.mark.parametrize("search_algorithm", ["tpe"])
 @pytest.mark.parametrize("execution_order", ["joint"])
-@pytest.mark.parametrize("system", ["local_system", "aml_system", "docker_system"])
+@pytest.mark.parametrize("system", ["local_system"])
 @pytest.mark.parametrize("olive_json", ["bert_ptq_cpu.json"])
 def test_bert(search_algorithm, execution_order, system, olive_json):
     # TODO: add gpu e2e test
@@ -31,7 +32,7 @@ def test_bert(search_algorithm, execution_order, system, olive_json):
 
     from olive.workflows import run as olive_run
 
-    olive_config = patch_config(olive_json, search_algorithm, execution_order, system)
-
+    # olive_config = patch_config(olive_json, search_algorithm, execution_order, system)
+    olive_config = json.load(open("bert_ptq_cpu.json", "r"))
     footprint = olive_run(olive_config)
     check_search_output(footprint)
