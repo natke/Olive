@@ -124,8 +124,6 @@ specify its name in :code:`"evaluate_func"` field, and Olive will call your func
                 "user_config": {
                     "user_script": "user_script.py",
                     "data_dir": "data",
-                    "dataloader_func": "create_dataloader",
-                    "post_processing_func": "post_process",
                     "batch_size": 16,
                     "evaluate_func": "eval_accuracy",
                 }
