@@ -148,10 +148,9 @@ class TestOliveEvaluator:
 
     CUSTOM_TEST_CASE = [
         (PyTorchEvaluator(), get_pytorch_model(), get_custom_eval(), 0.382715310),
-        (PyTorchEvaluator(), get_pytorch_model(), get_custom_metric_pytorch(), 0.382715311),
-        (OnnxEvaluator(), get_onnx_model(), get_custom_metric_onnx(), 0.382715312),
-        (SNPEEvaluator(), get_mock_snpe_model(), get_custom_metric_snpe(), 0.382715313),
-        (OpenVINOEvaluator(), get_mock_openvino_model(), get_custom_metric_openvino(), 0.382715314),
+        (OnnxEvaluator(), get_onnx_model(), get_custom_eval(), 0.382715310),
+        (SNPEEvaluator(), get_mock_snpe_model(), get_custom_eval(), 0.382715310),
+        (OpenVINOEvaluator(), get_mock_openvino_model(), get_custom_eval(), 0.382715310),
     ]
 
     @pytest.mark.parametrize(
